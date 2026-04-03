@@ -65,8 +65,10 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Venv
+        run: uv venv .venv
       - name: Install
-        run: uv pip install --system -e .[test,dev]
+        run: uv pip install -e .[test,dev]
       - name: Test
         run: |
           git config --global user.name "Unit Test"
