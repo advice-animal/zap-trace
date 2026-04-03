@@ -73,7 +73,7 @@ jobs:
         run: |
           git config --global user.name "Unit Test"
           git config --global user.email "example@example.com"
-          make test
+          . .venv/bin/activate && make test
       - name: Lint
         run: make lint
 
