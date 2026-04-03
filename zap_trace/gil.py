@@ -193,11 +193,12 @@ function findExport(name) {
         const p = Module.findGlobalExportByName(name);
         if (p && !p.isNull()) return p;
     }
+    // Fallback: search each loaded module directly.
+    // Use findExportByName (returns null) not getExportByName (throws) —
+    // the latter was removed from module instances in Frida 17.
     for (const mod of Process.enumerateModules()) {
-        try {
-            const p = mod.getExportByName(name);
-            if (p && !p.isNull()) return p;
-        } catch(_) {}
+        const p = mod.findExportByName(name);
+        if (p && !p.isNull()) return p;
     }
     return null;
 }
