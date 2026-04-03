@@ -167,6 +167,10 @@ def selecting_proc() -> Generator[subprocess.Popen, None, None]:
 
 class TestGilBlockingEvents:
     @frida_mark
+    @pytest.mark.skipif(
+        sys.version_info < (3, 11),
+        reason="Python 3.10 uses select() for time.sleep(), not clock_nanosleep",
+    )
     def test_time_sleep_shows_as_sleeping(self, sleeping_proc):
         events = _collect_gil_events(sleeping_proc.pid, duration=0.5)
         sleeping = [e for e in events if e.get("cat") == "sleeping"]
@@ -233,6 +237,10 @@ class TestGilBlockingEvents:
         )
 
     @frida_mark
+    @pytest.mark.skipif(
+        sys.version_info < (3, 11),
+        reason="Python 3.10 uses select() for time.sleep(), not clock_nanosleep",
+    )
     def test_gil_held_present_alongside_io_wait(self):
         """GIL held events must appear even when I/O wait events dominate.
 
