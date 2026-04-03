@@ -75,7 +75,7 @@ jobs:
           git config --global user.email "example@example.com"
           . .venv/bin/activate && make test
       - name: Lint
-        run: make lint
+        run: . .venv/bin/activate && make lint
 
   build:
     needs: [test, test-uv-python]
