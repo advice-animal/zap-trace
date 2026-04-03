@@ -276,7 +276,9 @@ class TestIngestOutput:
         tracker._ingest(_make_event(ts=2000, dur=100, tid=tid_b, kind=1))
         events = _flush(tracer, out)
         name_events = [
-            e for e in events if e.get("ph") == "M" and e.get("name") == "thread_name"
+            e for e in events
+            if e.get("ph") == "M" and e.get("name") == "thread_name"
+            and e.get("pid") == 999
         ]
         tids = {e["tid"] for e in name_events}
         assert tids == {tid_a, tid_b}
