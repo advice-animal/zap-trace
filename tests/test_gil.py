@@ -276,8 +276,10 @@ class TestIngestOutput:
         tracker._ingest(_make_event(ts=2000, dur=100, tid=tid_b, kind=1))
         events = _flush(tracer, out)
         name_events = [
-            e for e in events
-            if e.get("ph") == "M" and e.get("name") == "thread_name"
+            e
+            for e in events
+            if e.get("ph") == "M"
+            and e.get("name") == "thread_name"
             and e.get("pid") == 999
         ]
         tids = {e["tid"] for e in name_events}
@@ -346,7 +348,7 @@ class TestIngestOutput:
         raw_tid = 45 | _GIL_TID_BIT
         tracker._ingest(_make_event(ts=2000, dur=500, tid=raw_tid, kind=kind))
         events = _flush(tracer, out)
-        trace_events = [e for e in events if e.get("ph") == "X"]
+        trace_events = [e for e in events if e.get("ph") == "X" and e.get("pid") == 999]
         e = trace_events[0]
         assert e["name"] == expected_name
         assert e["cat"] == "io_wait"

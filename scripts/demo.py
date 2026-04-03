@@ -4,6 +4,7 @@ import time
 import random
 from threading import Thread
 
+
 def do_work():
     time.sleep(random.random())
     while 1:
@@ -13,6 +14,7 @@ def do_work():
             sys.stderr.write(".")
             sys.stderr.flush()
         time.sleep(0.5)
+
 
 threads = []
 
