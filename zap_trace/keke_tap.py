@@ -28,28 +28,32 @@ import keke
 _AGENT_JS = r"""
 'use strict';
 
-function findLibPython() {
-    for (const mod of Process.enumerateModules()) {
-        if (mod.name.match(/^libpython3\.\d+.*\.so/)) {
-            return mod;
-        }
-    }
-    // macOS: look for Python.framework or libpython*.dylib
-    for (const mod of Process.enumerateModules()) {
-        if (mod.path.match(/Python|libpython/)) {
-            return mod;
-        }
-    }
-    return null;
-}
+// Cached runner — built once in inject(), reused in cleanup() so
+// Process.enumerateModules() / dl_iterate_phdr is only called once.
+let _runPython = null;
 
-function makePythonRunner(lib) {
-    const ensure  = new NativeFunction(lib.findExportByName('PyGILState_Ensure'),
-                                       'int', []);
-    const release = new NativeFunction(lib.findExportByName('PyGILState_Release'),
-                                       'void', ['int']);
-    const runStr  = new NativeFunction(lib.findExportByName('PyRun_SimpleString'),
-                                       'int', ['pointer']);
+function makePythonRunner() {
+    // Single pass over the module list covers both the .so and .dylib cases.
+    let findExport = null;
+    for (const mod of Process.enumerateModules()) {
+        if (mod.name.match(/^libpython3\.\d+.*\.so/)       // Linux dynamic
+                || mod.path.match(/Python|libpython/)) {    // macOS framework/dylib
+            findExport = (name) => mod.findExportByName(name);
+            break;
+        }
+    }
+    // Linux with statically-linked Python: symbols live in the executable.
+    // Module.findGlobalExportByName() is the Frida 17+ API for this.
+    if (findExport === null) {
+        if (Module.findGlobalExportByName('PyGILState_Ensure') === null) {
+            return null;
+        }
+        findExport = (name) => Module.findGlobalExportByName(name);
+    }
+
+    const ensure  = new NativeFunction(findExport('PyGILState_Ensure'),  'int',     []);
+    const release = new NativeFunction(findExport('PyGILState_Release'), 'void',    ['int']);
+    const runStr  = new NativeFunction(findExport('PyRun_SimpleString'), 'int',     ['pointer']);
 
     return function runPython(code) {
         const cstr  = Memory.allocUtf8String(code);
@@ -62,11 +66,11 @@ function makePythonRunner(lib) {
 
 rpc.exports = {
     inject: function(fifoPath) {
-        const lib = findLibPython();
-        if (!lib) {
+        _runPython = makePythonRunner();
+        if (_runPython === null) {
             return {ok: false, error: 'libpython not found'};
         }
-        const runPython = makePythonRunner(lib);
+        const runPython = _runPython;
 
         // Two-step injection: first check keke is importable (gives a clean
         // error if not), then install the tap.  PyRun_SimpleString runs in
@@ -98,9 +102,8 @@ _keke_mod.TRACER._add_tap(_keke_fifo)
     },
 
     cleanup: function() {
-        const lib = findLibPython();
-        if (!lib) return {ok: false};
-        const runPython = makePythonRunner(lib);
+        if (_runPython === null) return {ok: false};
+        const runPython = _runPython;
         // Close the FIFO so keke's writer thread sees a broken pipe and removes
         // the tap.  Also tear down any NullTraceOutput we installed.
         const ret = runPython(`\
