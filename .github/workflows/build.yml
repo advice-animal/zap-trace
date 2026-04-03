@@ -52,7 +52,7 @@ jobs:
   test-uv-python:
     runs-on: ${{ matrix.os }}
     env:
-      UV_SYSTEM_PYTHON: ""
+      UV_SYSTEM_PYTHON: "0"
     strategy:
       fail-fast: false
       matrix:
