@@ -12,6 +12,7 @@ import keke
 
 from .gil import FridaGilTracker
 from .keke_tap import FridaKekeCollector
+from .otel_tap import FridaOtelCollector
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -72,6 +73,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable keke event collection.",
     )
+    parser.add_argument(
+        "--otel",
+        action="store_true",
+        help="Enable OpenTelemetry span collection.",
+    )
     return parser
 
 
@@ -91,8 +97,8 @@ def _main() -> None:
         parser.error("Supply either -p PID or -- COMMAND [ARGS...].")
 
     # Validate tracer selection.
-    if not args.gil and not args.keke:
-        parser.error("At least one of --gil or --keke is required.")
+    if not args.gil and not args.keke and not args.otel:
+        parser.error("At least one of --gil, --keke, or --otel is required.")
 
     # Exec mode: spawn the child process.
     child_proc: subprocess.Popen[bytes] | None = None
@@ -119,6 +125,8 @@ def _main() -> None:
                 )
             if args.keke:
                 stack.enter_context(FridaKekeCollector(pid))
+            if args.otel:
+                stack.enter_context(FridaOtelCollector(pid))
 
             if child_proc is not None:
                 # Exec mode: wait for the child to finish.

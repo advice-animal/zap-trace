@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import struct
 import sys
 import threading
@@ -236,6 +237,58 @@ function emitHeld(osTid) {
     }
 }
 
+// Query the target's threading.enumerate() via the Python C API and return
+// a JSON string mapping native_id (int) → thread name, or null on any error.
+// Uses a temporary __main__._zap_tnames attribute to pass the result back.
+function queryThreadNames() {
+    const _ensure  = findExport('PyGILState_Ensure');
+    const _release = findExport('PyGILState_Release');
+    const _runStr  = findExport('PyRun_SimpleString');
+    const _addMod  = findExport('PyImport_AddModule');
+    const _getAttr = findExport('PyObject_GetAttrString');
+    const _asUtf8  = findExport('PyUnicode_AsUTF8');
+    const _decRef  = findExport('Py_DecRef');
+    const _errClr  = findExport('PyErr_Clear');
+    if (!_ensure || !_release || !_runStr || !_addMod || !_getAttr || !_asUtf8 || !_decRef) {
+        return null;
+    }
+    const ensure  = new NativeFunction(_ensure,  'int',     []);
+    const release = new NativeFunction(_release, 'void',    ['int']);
+    const runStr  = new NativeFunction(_runStr,  'int',     ['pointer']);
+    const addMod  = new NativeFunction(_addMod,  'pointer', ['pointer']);
+    const getAttr = new NativeFunction(_getAttr, 'pointer', ['pointer', 'pointer']);
+    const asUtf8  = new NativeFunction(_asUtf8,  'pointer', ['pointer']);
+    const decRef  = new NativeFunction(_decRef,  'void',    ['pointer']);
+    const errClr  = new NativeFunction(_errClr,  'void',    []);
+
+    const state = ensure();
+    runStr(Memory.allocUtf8String(
+        'import json as _zt_j, threading as _zt_t\n' +
+        '__import__("__main__")._zap_tnames = _zt_j.dumps(\n' +
+        '    {t.native_id: t.name for t in _zt_t.enumerate()}\n' +
+        ')\n'
+    ));
+    const mainMod = addMod(Memory.allocUtf8String('__main__'));
+    let result = null;
+    if (mainMod && !mainMod.isNull()) {
+        const pyStr = getAttr(mainMod, Memory.allocUtf8String('_zap_tnames'));
+        if (pyStr && !pyStr.isNull()) {
+            const cStr = asUtf8(pyStr);
+            if (cStr && !cStr.isNull()) {
+                result = cStr.readUtf8String();
+            }
+            decRef(pyStr);
+        } else {
+            errClr();
+        }
+    }
+    runStr(Memory.allocUtf8String(
+        'try:\n    del __import__("__main__")._zap_tnames\nexcept AttributeError:\n    pass\n'
+    ));
+    release(state);
+    return result;
+}
+
 function attachGilHooks(takeAddrs, dropAddrs) {
     for (const addr of takeAddrs) {
         Interceptor.attach(addr, {
@@ -384,6 +437,7 @@ function attachBlockingHooks() {
 })();
 
 rpc.exports = {
+    getThreadNames: function() { return queryThreadNames(); },
     stop: function() {
         if (_flushTimer !== null) { clearInterval(_flushTimer); _flushTimer = null; }
         // Detach all hooks first so the target doesn't execute into a torn-down
@@ -432,6 +486,7 @@ class FridaGilTracker:
         self._session: Optional[Any] = None
         self._script: Optional[Any] = None
         self._seen_tids: set[int] = set()
+        self._thread_names: dict[int, str] = {}  # native_id -> Python thread name
 
     def __enter__(self) -> "FridaGilTracker":
         import frida  # noqa: PLC0415
@@ -459,6 +514,11 @@ class FridaGilTracker:
         self._script = self._session.create_script(js)
         self._script.on("message", self._on_message)
         self._script.load()
+        names_json = self._script.exports_sync.get_thread_names()
+        if names_json:
+            self._thread_names = {
+                int(k): v for k, v in json.loads(names_json).items()
+            }
         return self
 
     def _on_message(self, message: Any, data: Optional[bytes]) -> None:
@@ -499,8 +559,10 @@ class FridaGilTracker:
             json_tid = real_native_id - 1
             if tid not in self._seen_tids:
                 self._seen_tids.add(tid)
+                py_name = self._thread_names.get(real_native_id)
+                label = f"Thread: {py_name}" if py_name else f"GIL: {py_name}"
                 for name, args in (
-                    ("thread_name", {"name": f"GIL state {real_native_id}"}),
+                    ("thread_name", {"name": label}),
                     ("thread_sort_index", {"sort_index": json_tid}),
                 ):
                     t.queue.put(
