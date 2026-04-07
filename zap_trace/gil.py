@@ -327,6 +327,18 @@ function attachSaveThreadHook() {
     });
 }
 
+// Hook PyGILState_Release so that non-Python threads calling PyGILState_Ensure
+// (e.g. the Frida JS thread during queryThreadNames) always clear their
+// _holdStart entry.  On some builds PyGILState_Release does not reach
+// drop_gil or PyEval_SaveThread through a path we intercept.
+function attachGILStateReleaseHook() {
+    const addr = findExport('PyGILState_Release');
+    if (!addr) return;
+    Interceptor.attach(addr, {
+        onEnter: function() { emitHeld(this.threadId); }
+    });
+}
+
 // On BOLT-optimised binaries, take_gil is inlined into PyEval_RestoreThread,
 // so the take_gil symbol only fires on new-thread startup, not on every
 // re-acquisition.  Always hook PyEval_RestoreThread as well:
@@ -430,6 +442,7 @@ function attachBlockingHooks() {
 
     attachGilHooks(takeAddrs, dropAddrs);
     attachSaveThreadHook();
+    attachGILStateReleaseHook();
     attachRestoreThreadHook();
     attachBlockingHooks();
     send({type: 'ready', take: takeAddrs.length, drop: dropAddrs.length});
@@ -550,17 +563,17 @@ class FridaGilTracker:
             if event_kind not in _NAME:
                 continue
             # tid from the wire is native_id | _GIL_TID_BIT (internal protocol).
-            # For the JSON output use native_id - 1 as the track TID.
-            # Perfetto ignores thread_sort_index from legacy JSON and orders tracks
-            # by TID value instead; using native_id - 1 places the GIL row
-            # immediately above the keke row (native_id) for the same thread.
-            # sort_index is set to the same value so Chrome trace viewer agrees.
+            # keke emits sort_index = native_id * 10 for every thread row, leaving
+            # room for companion rows.  GIL row uses native_id * 10 - 1 so it sorts
+            # immediately above the keke row for the same thread, with 8 spare slots
+            # in between for future use.  This also eliminates collisions when thread
+            # IDs are consecutive (native_id * 10 - 1 never equals another native_id).
             real_native_id = tid & ~_GIL_TID_BIT
-            json_tid = real_native_id - 1
+            json_tid = real_native_id * 10 - 1
             if tid not in self._seen_tids:
                 self._seen_tids.add(tid)
                 py_name = self._thread_names.get(real_native_id)
-                label = f"Thread: {py_name}" if py_name else f"GIL: {py_name}"
+                label = f"Thread: {py_name}" if py_name else f"GIL state {real_native_id}"
                 for name, args in (
                     ("thread_name", {"name": label}),
                     ("thread_sort_index", {"sort_index": json_tid}),

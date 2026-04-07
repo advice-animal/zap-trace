@@ -20,6 +20,7 @@ def _make_event(ts: int, dur: int, tid: int, kind: int) -> bytes:
 def _make_frida_session():
     script = MagicMock()
     script.exports_sync.stop = MagicMock()
+    script.exports_sync.get_thread_names = MagicMock(return_value="{}")
     session = MagicMock()
     session.create_script = MagicMock(return_value=script)
     return session, script
@@ -200,7 +201,7 @@ class TestIngestOutput:
 
     # ── virtual tid ──────────────────────────────────────────────────────────
 
-    def test_virtual_tid_is_native_id_minus_one(self):
+    def test_virtual_tid_is_native_id_times_10_minus_1(self):
         tracker, tracer, out = _setup()
         native_id = 12345
         raw_tid = native_id | _GIL_TID_BIT
@@ -208,16 +209,19 @@ class TestIngestOutput:
         events = _flush(tracer, out)
         trace_events = [e for e in events if e.get("ph") == "X"]
         assert len(trace_events) == 1
-        assert trace_events[0]["tid"] == native_id - 1
+        assert trace_events[0]["tid"] == native_id * 10 - 1
 
-    def test_virtual_tid_has_no_gil_bit(self):
+    def test_virtual_tid_no_collision_with_consecutive_native_ids(self):
+        """GIL row TID must not equal any real thread's native_id."""
         tracker, tracer, out = _setup()
         native_id = 6001316  # realistic get_native_id() value
         raw_tid = native_id | _GIL_TID_BIT
         tracker._ingest(_make_event(ts=5000, dur=100, tid=raw_tid, kind=1))
         events = _flush(tracer, out)
         trace_events = [e for e in events if e.get("ph") == "X"]
-        assert not (trace_events[0]["tid"] & _GIL_TID_BIT)
+        # native_id * 10 - 1 is always > native_id, so can't collide with
+        # this thread's own native_id or the next consecutive native_id.
+        assert trace_events[0]["tid"] == native_id * 10 - 1
 
     # ── thread metadata ───────────────────────────────────────────────────────
 
@@ -232,12 +236,12 @@ class TestIngestOutput:
             for e in events
             if e.get("ph") == "M"
             and e.get("name") == "thread_name"
-            and e.get("tid") == native_id - 1
+            and e.get("tid") == native_id * 10 - 1
         ]
         assert len(name_events) == 1
         assert name_events[0]["args"]["name"] == f"GIL state {native_id}"
 
-    def test_thread_sort_index_is_native_id_minus_one(self):
+    def test_thread_sort_index_is_native_id_times_10_minus_1(self):
         tracker, tracer, out = _setup()
         native_id = 8888
         raw_tid = native_id | _GIL_TID_BIT
@@ -248,10 +252,10 @@ class TestIngestOutput:
             for e in events
             if e.get("ph") == "M"
             and e.get("name") == "thread_sort_index"
-            and e.get("tid") == native_id - 1
+            and e.get("tid") == native_id * 10 - 1
         ]
         assert len(sort_events) == 1
-        assert sort_events[0]["args"]["sort_index"] == native_id - 1
+        assert sort_events[0]["args"]["sort_index"] == native_id * 10 - 1
 
     def test_thread_metadata_emitted_once_per_tid(self):
         tracker, tracer, out = _setup()
@@ -264,7 +268,7 @@ class TestIngestOutput:
             for e in events
             if e.get("ph") == "M"
             and e.get("name") == "thread_name"
-            and e.get("tid") == 111 - 1
+            and e.get("tid") == 111 * 10 - 1
         ]
         assert len(name_events) == 1  # not duplicated on second call
 
@@ -283,7 +287,7 @@ class TestIngestOutput:
             and e.get("pid") == 999
         ]
         tids = {e["tid"] for e in name_events}
-        assert tids == {111 - 1, 222 - 1}
+        assert tids == {111 * 10 - 1, 222 * 10 - 1}
 
     # ── timestamp and duration ────────────────────────────────────────────────
 
@@ -424,5 +428,5 @@ class TestIngestOutput:
         raw_tid = 88 | _GIL_TID_BIT
         tracker._ingest(_make_event(ts=1000, dur=100, tid=raw_tid, kind=1))
         events = _flush(tracer, out)
-        meta = [e for e in events if e.get("ph") == "M" and e.get("tid") == 88 - 1]
+        meta = [e for e in events if e.get("ph") == "M" and e.get("tid") == 88 * 10 - 1]
         assert all(e["pid"] == 999 for e in meta)
