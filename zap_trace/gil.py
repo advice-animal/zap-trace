@@ -384,8 +384,6 @@ function attachBlockingHooks() {
         ['select$NOCANCEL',                4],
         ['select$DARWIN_EXTSN$NOCANCEL',   4],
         ['poll',                           5],
-        ['kevent',                         6],
-        ['kevent64',                       6],
         ['pselect',                        8],
         ['pselect$DARWIN_EXTSN',           8],
     ] : [
