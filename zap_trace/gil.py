@@ -489,24 +489,25 @@ class FridaGilTracker:
         ):
             if event_kind not in _NAME:
                 continue
+            # tid from the wire is native_id | _GIL_TID_BIT (internal protocol).
+            # For the JSON output use native_id - 1 as the track TID.
+            # Perfetto ignores thread_sort_index from legacy JSON and orders tracks
+            # by TID value instead; using native_id - 1 places the GIL row
+            # immediately above the keke row (native_id) for the same thread.
+            # sort_index is set to the same value so Chrome trace viewer agrees.
+            real_native_id = tid & ~_GIL_TID_BIT
+            json_tid = real_native_id - 1
             if tid not in self._seen_tids:
                 self._seen_tids.add(tid)
-                # tid is already a virtual GIL row tid (native_id | _GIL_TID_BIT).
-                # Emit sort_index=-1 so all GIL rows appear above keke thread rows
-                # (which use sort_index=0).  The thread_name uses the real native_id
-                # so the user can correlate it with the keke row below.
-                real_native_id = tid & ~_GIL_TID_BIT
                 for name, args in (
                     ("thread_name", {"name": f"GIL state {real_native_id}"}),
-                    # sort_index one below the keke row (which uses native_id)
-                    # so the GIL row always sits immediately above its thread.
-                    ("thread_sort_index", {"sort_index": real_native_id - 1}),
+                    ("thread_sort_index", {"sort_index": json_tid}),
                 ):
                     t.queue.put(
                         keke.EVENT(
                             {
                                 "pid": pid,
-                                "tid": tid,
+                                "tid": json_tid,
                                 "ts": 0,
                                 "ph": "M",
                                 "cat": "__metadata",
@@ -525,7 +526,7 @@ class FridaGilTracker:
                         "ph": "X",
                         "ts": timestamp - duration_us,
                         "dur": duration_us,
-                        "tid": tid,
+                        "tid": json_tid,
                     }
                 ),
                 False,

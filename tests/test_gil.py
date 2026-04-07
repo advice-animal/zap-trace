@@ -200,7 +200,7 @@ class TestIngestOutput:
 
     # ── virtual tid ──────────────────────────────────────────────────────────
 
-    def test_virtual_tid_is_native_or_bit(self):
+    def test_virtual_tid_is_native_id_minus_one(self):
         tracker, tracer, out = _setup()
         native_id = 12345
         raw_tid = native_id | _GIL_TID_BIT
@@ -208,16 +208,16 @@ class TestIngestOutput:
         events = _flush(tracer, out)
         trace_events = [e for e in events if e.get("ph") == "X"]
         assert len(trace_events) == 1
-        assert trace_events[0]["tid"] == raw_tid
+        assert trace_events[0]["tid"] == native_id - 1
 
-    def test_virtual_tid_bit_is_set(self):
+    def test_virtual_tid_has_no_gil_bit(self):
         tracker, tracer, out = _setup()
         native_id = 6001316  # realistic get_native_id() value
         raw_tid = native_id | _GIL_TID_BIT
         tracker._ingest(_make_event(ts=5000, dur=100, tid=raw_tid, kind=1))
         events = _flush(tracer, out)
         trace_events = [e for e in events if e.get("ph") == "X"]
-        assert trace_events[0]["tid"] & _GIL_TID_BIT
+        assert not (trace_events[0]["tid"] & _GIL_TID_BIT)
 
     # ── thread metadata ───────────────────────────────────────────────────────
 
@@ -232,7 +232,7 @@ class TestIngestOutput:
             for e in events
             if e.get("ph") == "M"
             and e.get("name") == "thread_name"
-            and e.get("tid") == raw_tid
+            and e.get("tid") == native_id - 1
         ]
         assert len(name_events) == 1
         assert name_events[0]["args"]["name"] == f"GIL state {native_id}"
@@ -248,7 +248,7 @@ class TestIngestOutput:
             for e in events
             if e.get("ph") == "M"
             and e.get("name") == "thread_sort_index"
-            and e.get("tid") == raw_tid
+            and e.get("tid") == native_id - 1
         ]
         assert len(sort_events) == 1
         assert sort_events[0]["args"]["sort_index"] == native_id - 1
@@ -264,7 +264,7 @@ class TestIngestOutput:
             for e in events
             if e.get("ph") == "M"
             and e.get("name") == "thread_name"
-            and e.get("tid") == raw_tid
+            and e.get("tid") == 111 - 1
         ]
         assert len(name_events) == 1  # not duplicated on second call
 
@@ -283,7 +283,7 @@ class TestIngestOutput:
             and e.get("pid") == 999
         ]
         tids = {e["tid"] for e in name_events}
-        assert tids == {tid_a, tid_b}
+        assert tids == {111 - 1, 222 - 1}
 
     # ── timestamp and duration ────────────────────────────────────────────────
 
@@ -424,5 +424,5 @@ class TestIngestOutput:
         raw_tid = 88 | _GIL_TID_BIT
         tracker._ingest(_make_event(ts=1000, dur=100, tid=raw_tid, kind=1))
         events = _flush(tracer, out)
-        meta = [e for e in events if e.get("ph") == "M" and e.get("tid") == raw_tid]
+        meta = [e for e in events if e.get("ph") == "M" and e.get("tid") == 88 - 1]
         assert all(e["pid"] == 999 for e in meta)
