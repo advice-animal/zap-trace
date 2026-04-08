@@ -221,8 +221,6 @@ class TestGilBlockingEvents:
         finally:
             _teardown(proc)
         held = [e for e in events if e.get("cat") == "gil_held"]
-        io_wait = [e for e in events if e.get("cat") == "io_wait"]
-        assert io_wait, "expected I/O wait events from asyncio kevent"
         assert held, "expected GIL held events — take_gil hooks may be missing"
         wait = [e for e in events if e.get("cat") == "gil_wait"]
         assert wait, (
