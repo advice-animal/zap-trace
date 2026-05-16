@@ -13,7 +13,19 @@ sudo sysctl -w kernel.yama.ptrace_scope=0
 or simply run as root.  On Mac, you will get an auth prompt the first time you
 run.
 
-## Sample Run
+## Real-world example: hdeps
+
+I have a "debugging resolver" called hdeps, which reads metadata off pypi to try
+to discover conflicts in your dep tree.  It spends most of its time doing
+network, but also has significant sections that are GIL-bound.  This file is
+checked in as `zap_trace_44905_1778954991.json` if you want to give it a look.
+
+![Trace 6](docs/chrometrace6.png)
+
+(note: to use `--keke --gil` together, you will need to attach rather than
+spawning)
+
+## Trying it out
 
 If you run `python docs/threads.py` in one window, it will tell you its PID.
 This starts four background threads that are a busy-loop.  Run
@@ -36,17 +48,6 @@ having to share what time is left on that one core).
 
 ![Trace 2](docs/chrometrace2.png)
 
-## Another run (hdeps)
-
-Instead of attaching, you can have `uvx-trace` run your program.  This was a
-captured run from a real run of `hdeps hdeps` via this command (because
-`zap-trace uvx` doesn't currently work, it needs to actually start python
-directly).
-
-```
-uvx -p3.13 --prerelease=allow zap-trace --gil ~/code/hdeps/.venv/bin/hdeps hdeps```
-
-![Trace 3](docs/chrometrace3.png)
 
 # Version Compat
 
