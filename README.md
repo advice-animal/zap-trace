@@ -36,6 +36,17 @@ having to share what time is left on that one core).
 
 ![Trace 2](docs/chrometrace2.png)
 
+## Another run (hdeps)
+
+Instead of attaching, you can have `uvx-trace` run your program.  This was a
+captured run from a real run of `hdeps hdeps` via this command (because
+`zap-trace uvx` doesn't currently work, it needs to actually start python
+directly).
+
+```
+uvx -p3.13 --prerelease=allow zap-trace --gil ~/code/hdeps/.venv/bin/hdeps hdeps```
+
+![Trace 3](docs/chrometrace3.png)
 
 # Version Compat
 
