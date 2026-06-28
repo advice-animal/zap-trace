@@ -49,8 +49,36 @@ jobs:
         run: |
           make lint
 
+  test-uv-python:
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_SYSTEM_PYTHON: "0"
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        os: [ubuntu-latest, macOS-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Venv
+        run: uv venv .venv
+      - name: Install
+        run: uv pip install -e .[test,dev]
+      - name: Test
+        run: |
+          git config --global user.name "Unit Test"
+          git config --global user.email "example@example.com"
+          . .venv/bin/activate && make test
+      - name: Lint
+        run: . .venv/bin/activate && make lint
+
   build:
-    needs: test
+    needs: [test, test-uv-python]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
